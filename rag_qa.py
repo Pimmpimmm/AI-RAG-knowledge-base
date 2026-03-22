@@ -1,6 +1,6 @@
 from langchain_openai import ChatOpenAI
-from langchain.chains.retrieval import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 class RAGQASystem:
@@ -22,22 +22,23 @@ class RAGQASystem:
             文档内容：
             {context}
             
-            用户问题：{input}
+            用户问题：{question}
             
             请用中文回答：""")
         
-        self.combine_docs_chain = create_stuff_documents_chain(self.llm, self.prompt)
-        self.retrieval_chain = create_retrieval_chain(
-            self.vector_store.vector_store.as_retriever(search_kwargs={"k": retrieval_k}),
-            self.combine_docs_chain
+        self.retriever = self.vector_store.vector_store.as_retriever(search_kwargs={"k": retrieval_k})
+        
+        self.rag_chain = (
+            {"context": self.retriever, "question": RunnablePassthrough()}
+            | self.prompt
+            | self.llm
+            | StrOutputParser()
         )
     
-
     def ask_question(self, question):
-        result = self.retrieval_chain.invoke({"input": question})
-        answer = result["answer"]
-        source_docs = result["context"]
+        result = self.rag_chain.invoke(question)
         
+        source_docs = self.retriever.invoke(question)
         sources = []
         for doc in source_docs:
             sources.append({
@@ -46,4 +47,4 @@ class RAGQASystem:
                 "content": doc.page_content[:200] + "..."
             })
         
-        return answer, sources
+        return result, sources

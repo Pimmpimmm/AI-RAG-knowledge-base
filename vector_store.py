@@ -3,25 +3,73 @@ from pinecone import Pinecone, ServerlessSpec
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_core.documents import Document as LangchainDocument
+from typing import List
+
+class VolcanoEmbeddings:
+    def __init__(self, api_key: str, model: str):
+        self.api_key = api_key
+        self.model = model
+        try:
+            from volcenginesdkarkruntime import Ark
+            self.client = Ark(api_key=api_key)
+        except ImportError:
+            raise ImportError("请安装火山方舟 SDK: pip install volcengine-python-sdk")
+    
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        embeddings = []
+        for text in texts:
+            try:
+                resp = self.client.multimodal_embeddings.create(
+                    model=self.model,
+                    input=[{"type": "text", "text": text}]
+                )
+                if resp.data:
+                    embeddings.append(resp.data.embedding)
+                else:
+                    raise ValueError("嵌入响应为空")
+            except Exception as e:
+                raise RuntimeError(f"火山方舟嵌入失败: {str(e)}")
+        return embeddings
+    
+    def embed_query(self, text: str) -> List[float]:
+        try:
+            resp = self.client.multimodal_embeddings.create(
+                model=self.model,
+                input=[{"type": "text", "text": text}]
+            )
+            if resp.data:
+                return resp.data.embedding
+            else:
+                raise ValueError("嵌入响应为空")
+        except Exception as e:
+            raise RuntimeError(f"火山方舟嵌入失败: {str(e)}")
 
 class VectorStore:
-    def __init__(self, pinecone_api_key, index_name, embedding_api_key, embedding_base_url, embedding_model, region="us-east-1", embedding_dim=1536):
+    def __init__(self, pinecone_api_key, index_name, embedding_api_key, embedding_base_url, embedding_model, region="us-east-1", embedding_dim=1536, provider="OpenAI"):
         self.pinecone_api_key = pinecone_api_key
         self.index_name = index_name
         self.region = region
         self.embedding_dim = embedding_dim
+        self.provider = provider
         
         self.pc = Pinecone(api_key=pinecone_api_key)
-        self.embeddings = OpenAIEmbeddings(
-            openai_api_key=embedding_api_key,
-            base_url=embedding_base_url,
-            model=embedding_model
-        )
+        
+        if provider == "火山方舟 (豆包)":
+            self.embeddings = VolcanoEmbeddings(
+                api_key=embedding_api_key,
+                model=embedding_model
+            )
+        else:
+            self.embeddings = OpenAIEmbeddings(
+                openai_api_key=embedding_api_key,
+                base_url=embedding_base_url,
+                model=embedding_model
+            )
+        
         self.vector_store = None
         self._initialize_index()
     
     def _initialize_index(self):
-        # 检查索引是否存在，不存在则创建
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
                 name=self.index_name,
@@ -55,7 +103,6 @@ class VectorStore:
     def clear_index(self):
         try:
             self.pc.delete_index(self.index_name)
-            # 等待删除完成（可选）
             import time
             time.sleep(2)
         except Exception as e:

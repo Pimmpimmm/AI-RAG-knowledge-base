@@ -28,14 +28,19 @@ class DocumentProcessor:
         return text
     
     def process_document(self, uploaded_file):
-        filename = uploaded_file.name.lower()
+        try:
+            filename = uploaded_file.name.lower()
+            if filename.endswith('.pdf'):
+                text = self.extract_text_from_pdf(uploaded_file)
+            elif filename.endswith('.docx'):
+                text = self.extract_text_from_docx(uploaded_file)
+            else:
+                raise ValueError(f"不支持的文件格式: {filename}")
+        except Exception as e:
+            raise RuntimeError(f"处理文件 {uploaded_file.name} 时出错: {e}")
         
-        if filename.endswith('.pdf'):
-            text = self.extract_text_from_pdf(uploaded_file)
-        elif filename.endswith('.docx'):
-            text = self.extract_text_from_docx(uploaded_file)
-        else:
-            raise ValueError(f"不支持的文件格式: {filename}")
+        if not text.strip():
+            raise ValueError("文档内容为空，无法处理")
         
         chunks = self.text_splitter.split_text(text)
         return chunks

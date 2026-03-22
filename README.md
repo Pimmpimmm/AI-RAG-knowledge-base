@@ -45,7 +45,7 @@ PINECONE_ENV=us-east-1
 ### 3. 运行应用
 
 ```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
 ### 4. 使用步骤
